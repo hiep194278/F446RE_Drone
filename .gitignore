@@ -1,0 +1,10 @@
+# STM32CubeIDE specific folders
+Debug/
+Release/
+*.elf
+*.hex
+*.bin
+*.map
+
+# Eclipse metadata files
+.settings/
