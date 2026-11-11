@@ -26,6 +26,7 @@
 #include <string.h>
 #include "imu.h"
 #include "complementary_filter.h"
+#include "kalman.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,7 +53,9 @@ TIM_HandleTypeDef htim2;
 /* USER CODE BEGIN PV */
 IMU_Data_t imu;
 IMU_Diagnostics_t imu_diag;
-Attitude_t attitude;
+//Attitude_t attitude; // For complementry filter
+Kalman_State_t kalman_state;
+
 uint32_t last_tick;
 uint32_t esc_test_tick;
 int test_state = 0;
@@ -107,7 +110,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
   IMU_Init(&hi2c1);
   IMU_CalibrateGyro();
-  ComplementaryFilter_Init();
+//  ComplementaryFilter_Init();
+  Kalman_Init();
 
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 
@@ -131,7 +135,8 @@ int main(void)
 		  last_tick = now;
 		  if (IMU_Read(&imu))
 		  {
-			  ComplementaryFilter_Update(&imu, &attitude, dt);
+//			  ComplementaryFilter_Update(&imu, &attitude, dt);
+			  Kalman_Update(&imu, &kalman_state, dt);
 		  }
 		  IMU_GetDiagnostics(&imu_diag);
 	  }
