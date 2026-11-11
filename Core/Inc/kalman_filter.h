@@ -1,5 +1,5 @@
-#ifndef KALMAN_H_
-#define KALMAN_H_
+#ifndef KALMAN_FILTER_H_
+#define KALMAN_FILTER_H_
 
 #include "main.h"
 #include "imu.h"
@@ -14,4 +14,4 @@ typedef struct {
 void Kalman_Init(void);
 void Kalman_Update(IMU_Data_t *imu, Kalman_State_t *state, float dt);
 
-#endif /* KALMAN_H_ */
+#endif /* KALMAN_FILTER_H_ */
