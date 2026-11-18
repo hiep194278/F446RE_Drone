@@ -120,16 +120,12 @@ int main(void)
   /* USER CODE BEGIN 2 */
   IMU_Init(&hi2c1);
 //  IMU_CalibrateGyro();
-  Telemetry_Start_Receive();
   Telemetry_Init(&huart1);
+  Telemetry_Start_Receive();
 //  ComplementaryFilter_Init();
   Kalman_Init();
 
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-
-  // Arming ESC first 3 seconds
-//  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, ESC_STOP_PULSE);
-//  HAL_Delay(3000);
 
   last_tick = HAL_GetTick();
   telemetry_tick = HAL_GetTick();
