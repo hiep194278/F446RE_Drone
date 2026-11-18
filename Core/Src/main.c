@@ -17,7 +17,6 @@
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
-#include <kalman_filter.h>
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -27,6 +26,8 @@
 #include <string.h>
 #include "imu.h"
 #include "complementary_filter.h"
+#include <kalman_filter.h>
+#include "telemetry.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,7 +49,12 @@
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
+
 TIM_HandleTypeDef htim2;
+
+UART_HandleTypeDef huart1;
+DMA_HandleTypeDef hdma_usart1_tx;
+DMA_HandleTypeDef hdma_usart1_rx;
 
 /* USER CODE BEGIN PV */
 IMU_Data_t imu;
@@ -57,6 +63,7 @@ IMU_Diagnostics_t imu_diag;
 Kalman_State_t kalman_state;
 
 uint32_t last_tick;
+uint32_t telemetry_tick;
 uint32_t esc_test_tick;
 int test_state = 0;
 /* USER CODE END PV */
@@ -64,8 +71,10 @@ int test_state = 0;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -104,22 +113,26 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_I2C1_Init();
   MX_TIM2_Init();
-
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   IMU_Init(&hi2c1);
-  IMU_CalibrateGyro();
+//  IMU_CalibrateGyro();
+  Telemetry_Start_Receive();
+  Telemetry_Init(&huart1);
 //  ComplementaryFilter_Init();
   Kalman_Init();
 
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 
   // Arming ESC first 3 seconds
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, ESC_STOP_PULSE);
-  HAL_Delay(3000);
+//  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, ESC_STOP_PULSE);
+//  HAL_Delay(3000);
 
   last_tick = HAL_GetTick();
+  telemetry_tick = HAL_GetTick();
   esc_test_tick = HAL_GetTick();
   /* USER CODE END 2 */
 
@@ -141,6 +154,33 @@ int main(void)
 		  IMU_GetDiagnostics(&imu_diag);
 	  }
 
+	  // 2. Lower-frequency 50Hz (20ms) Telemetry Transmission Loop
+	  if ((now - telemetry_tick) >= 20) {
+	      telemetry_tick = now;
+
+	      const FlightControl_t *cmd = Telemetry_Get_Control();
+
+	      // Example: Apply throttle to PWM if armed
+	      if (cmd->armed) {
+	    	  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, cmd->throttle);
+	    	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+	      } else {
+	    	  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, ESC_STOP_PULSE);
+	    	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+	      }
+
+	      Attitude_Data_t telemetry_packet = {
+	          // Easily swap between kalman_state or complementary_state here:
+	          .roll       = kalman_state.roll,       // or complementary_state.roll
+	          .pitch      = kalman_state.pitch,      // or complementary_state.pitch
+	          .yaw        = 0.0f,
+	          .rollspeed  = imu.gx,
+	          .pitchspeed = imu.gy,
+	          .yawspeed   = imu.gz
+	      };
+
+	      Telemetry_Send_Attitude(&telemetry_packet);
+	  }
 //	  if ((now - esc_test_tick) >= 5000)
 //	  {
 //		  esc_test_tick = now;
@@ -309,6 +349,58 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA2_Stream2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
+  /* DMA2_Stream7_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream7_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -365,7 +457,11 @@ void Error_Handler(void)
   * @param  line: assert_param error line source number
   * @retval None
   */
-void Error_Handler_Debug(void)
+void assert_failed(uint8_t *file, uint32_t line)
 {
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
 }
-#endif
+#endif /* USE_FULL_ASSERT */
